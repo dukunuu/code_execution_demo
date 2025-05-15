@@ -1,0 +1,166 @@
+services:
+  eureka-server:
+    container_name: eureka-server
+    build:
+      context: ./eureka_server/
+      dockerfile: Dockerfile
+      args:
+        JAR_FILE: /target/*.jar
+    ports:
+      - "8761:8761"
+    networks:
+      - eureka-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 10s   
+      timeout: 5s    
+      retries: 5    
+      start_period: 30s
+
+  api-gateway:
+    container_name: api-gateway
+    build:
+      context: ./apigateway/
+      dockerfile: Dockerfile
+      args:
+        JAR_FILE: /target/*.jar
+    ports:
+      - "8000:8000"
+    environment:
+      - SERVER_PORT=8000
+      - SPRING_APPLICATION_NAME=api-gateway-service
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - EUREKA_INSTANCE_PREFER_IP=true
+      - SPRING_CLOUD_GATEWAY_DISCOVERY_LOCATOR_ENABLED=true
+      - SPRING_CLOUD_GATEWAY_DISCOVERY_LOCATOR_LOWERCASE_SERVICE_ID=true
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      code_management:
+        condition: service_healthy
+      code_execution:
+        condition: service_healthy
+      problem-generator:
+        condition: service_healthy
+    networks:
+      - eureka-network
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    volumes:
+      - ollama_data:/root/.ollama # Mount the named volume here
+    networks:
+      - eureka-network
+
+  dind-daemon:
+    image: docker:dind
+    container_name: dind-daemon
+    privileged: true # Essential for DinD
+    environment:
+      DOCKER_TLS_CERTDIR: "" # Disable TLS for the inner daemon for simpler inter-container TCP
+    volumes:
+      - dind_storage:/var/lib/docker # Persists the inner Docker daemon's state (including loaded images)
+      - code_execution_shared_temp:/mnt/code_execution_temp
+    networks:
+      - eureka-network
+    expose: # Expose only to other services on the same network
+      - "2375" # Docker daemon TCP port (non-TLS)
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+
+  code_management:
+    build:
+      context: ./code_management_service/
+      dockerfile: Dockerfile
+      args:
+        JAR_FILE: /target/*.jar
+    volumes:
+      - db_data:/code_snippets.db
+    environment:
+      - SPRING_APPLICATION_NAME=code-management-service
+      - SERVER_PORT=8081
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - EUREKA_INSTANCE_PREFER_IP=true
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - eureka-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"] # port matches server_port
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  problem-generator:
+    build:
+      context: ./ollama-problem-generator/
+      dockerfile: Dockerfile
+      args:
+        JAR_FILE: /target/*.jar
+    environment:
+      - SPRING_APPLICATION_NAME=problem-generator-service
+      - SERVER_PORT=8082
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - EUREKA_INSTANCE_PREFER_IP=true
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    networks:
+      - eureka-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  code_execution:
+    build:
+      context: ./code_execution_service/
+      dockerfile: Dockerfile
+      args:
+        JAR_FILE: /target/*.jar
+    volumes:
+      - code_execution_shared_temp:/mnt/code_execution_temp
+    environment:
+      - SPRING_APPLICATION_NAME=code-execution-service
+      - SERVER_PORT=8080
+      - DOCKER_HOST=tcp://dind-daemon:2375
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - EUREKA_INSTANCE_PREFER_IP=true
+      - EXECUTION_TEMP_HOST_BASEPATH=/mnt/code_execution_temp
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      dind-daemon:
+        condition: service_healthy
+    networks:
+      - eureka-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"] # port matches server_port
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+volumes:
+  dind_storage: # For the DinD daemon's internal state
+  code_execution_shared_temp:
+  db_data:
+  ollama_data:
+
+networks:
+  eureka-network:
+    driver: bridge
+
+

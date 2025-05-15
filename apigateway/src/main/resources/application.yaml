@@ -1,0 +1,48 @@
+server:
+  port: 8000
+
+spring:
+  application:
+    name: api-gateway-service
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          lowerCaseServiceId: true
+      routes:
+        - id: code-execution-service-route
+          uri: lb://code-execution-service
+          predicates:
+            - Path=/api/v1/execute/**
+          filters:
+            - RewritePath=/api/v1/execute(?<segment>/?.*), /execute${segment}
+
+        - id: code-management-service-route
+          uri: lb://code-management-service
+          predicates:
+            - Path=/api/v1/code-snippets/**
+          filters:
+            - RewritePath=/api/v1/code-snippets(?<segment>/?.*), /code-snippets${segment}
+
+        - id: problem-generator-service-route
+          uri: lb://problem-generator-service
+          predicates:
+            - Path=/api/v1/generate-problem/**
+          filters:
+            - RewritePath=/api/v1/generate-problem(?<segment>/?.*), /generate-problem${segment}
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
+
+logging:
+  level:
+    org.springframework.cloud.gateway: TRACE
+    reactor.netty.http.client: DEBUG
+    org.springframework.cloud.loadbalancer: DEBUG
+    com.netflix.discovery: INFO
+
