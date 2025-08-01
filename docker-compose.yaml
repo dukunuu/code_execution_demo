@@ -56,16 +56,16 @@ services:
   dind-daemon:
     image: docker:dind
     container_name: dind-daemon
-    privileged: true # Essential for DinD
+    privileged: true
     environment:
-      DOCKER_TLS_CERTDIR: "" # Disable TLS for the inner daemon for simpler inter-container TCP
+      DOCKER_TLS_CERTDIR: ""
     volumes:
-      - dind_storage:/var/lib/docker # Persists the inner Docker daemon's state (including loaded images)
+      - dind_storage:/var/lib/docker
       - code_execution_shared_temp:/mnt/code_execution_temp
     networks:
       - eureka-network
-    expose: # Expose only to other services on the same network
-      - "2375" # Docker daemon TCP port (non-TLS)
+    expose:
+      - "2375"
     healthcheck:
       test: ["CMD", "docker", "info"]
       interval: 15s

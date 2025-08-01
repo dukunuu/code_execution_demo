@@ -5,7 +5,7 @@ SERVICES = \
     eureka_server \
     ollama-problem-generator
 
-.PHONY: build-all $(SERVICES)
+.PHONY: build-all $(SERVICES) up down clean run
 
 build-all:
 	@echo "--- Building all services ---"
@@ -20,10 +20,19 @@ build-all:
 	done
 	@echo "--- All services built successfully ---"
 
-# Optional: Individual build targets if you want to build one service
-# This uses a Make loop to generate targets, or you can list them manually.
-# $(foreach service,$(SERVICES), \
-# $(eval .PHONY: $(service)) \
-# $(eval $(service): ; @echo "Building $(service)..."; @(cd ./$(service) && ./mvnw clean package)) \
-# )
+up:
+	docker compose up --build -d
 
+down:
+	docker compose down
+
+clean:
+	docker compose down -v
+	docker system prune -f
+
+run:
+	@if [ -z "$(service)" ]; then \
+		echo "Please specify a service: make run service=<service-name>"; \
+	else \
+		docker compose up -d $(service); \
+	fi
